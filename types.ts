@@ -15,6 +15,7 @@ export interface Country {
   lastChoice: DevelopmentChoice;
   isAbilityUsed: boolean;
   isJoined: boolean;
+  nickname: string; // 학생 닉네임 추가
   score: number;
 }
 

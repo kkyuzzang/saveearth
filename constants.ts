@@ -6,15 +6,16 @@ export const MAX_TEMPERATURE = 20.0;
 export const MAX_TURNS = 8;
 
 export const COUNTRIES: Record<CountryId, Country> = {
-  KOREA: { id: 'KOREA', name: '대한민국', flag: '🇰🇷', abilityName: '녹색성장', abilityDesc: '두 나라 지명 후 가위바위보 대결. 진 쪽 GP -5, 기온 -0.3', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  USA: { id: 'USA', name: '미국', flag: '🇺🇸', abilityName: 'CCS 기술', abilityDesc: '퀴즈 정답 시 지구 기온 -0.5', gp: 25, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  SWEDEN: { id: 'SWEDEN', name: '스웨덴', flag: '🇸🇪', abilityName: '인간 환경 선언', abilityDesc: '다음 턴 모든 국가 환경 우선 선택 시 기온 -0.4', gp: 18, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  JAPAN: { id: 'JAPAN', name: '일본', flag: '🇯🇵', abilityName: '교토의정서', abilityDesc: '기온 17도 이상 시 사용. 직전 경제 우선 국가는 이번 턴 환경 우선 강제', gp: 22, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  TUVALU: { id: 'TUVALU', name: '투발루', flag: '🇹🇻', abilityName: '가라앉는 섬', abilityDesc: '기온 18도 이상 시. 한 나라가 GP 10 기부 시 기온 -0.4', gp: 10, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  DENMARK: { id: 'DENMARK', name: '덴마크', flag: '🇩🇰', abilityName: '코펜하겐 기후협약', abilityDesc: '기온 17도 이상 시. GP 상위 3개국 2턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  FRANCE: { id: 'FRANCE', name: '프랑스', flag: '🇫🇷', abilityName: '파리기후변화협약', abilityDesc: '기온 19도 이상 시. 프랑스 제외 모든 국가 1턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  BRAZIL: { id: 'BRAZIL', name: '브라질', flag: '🇧🇷', abilityName: '리우 환경회의', abilityDesc: '브라질 제외 모든 국가 1턴간 경제/환경 선택 반대 적용', gp: 15, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
-  NKOREA: { id: 'NKOREA', name: '북한', flag: '🇰🇵', abilityName: '내래 핵 쏜다우', abilityDesc: '지구 기온 +1.0 (즉시 적용)', gp: 12, lastChoice: null, isAbilityUsed: false, isJoined: false, score: 0 },
+  // Added nickname: '' to satisfy Country interface
+  KOREA: { id: 'KOREA', name: '대한민국', flag: '🇰🇷', abilityName: '녹색성장', abilityDesc: '두 나라 지명 후 가위바위보 대결. 진 쪽 GP -5, 기온 -0.3', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  USA: { id: 'USA', name: '미국', flag: '🇺🇸', abilityName: 'CCS 기술', abilityDesc: '퀴즈 정답 시 지구 기온 -0.5', gp: 25, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  SWEDEN: { id: 'SWEDEN', name: '스웨덴', flag: '🇸🇪', abilityName: '인간 환경 선언', abilityDesc: '다음 턴 모든 국가 환경 우선 선택 시 기온 -0.4', gp: 18, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  JAPAN: { id: 'JAPAN', name: '일본', flag: '🇯🇵', abilityName: '교토의정서', abilityDesc: '기온 17도 이상 시. 직전 경제 우선 국가는 이번 턴 환경 우선 강제', gp: 22, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  TUVALU: { id: 'TUVALU', name: '투발루', flag: '🇹🇻', abilityName: '가라앉는 섬', abilityDesc: '기온 18도 이상 시. 한 나라가 GP 10 기부 시 기온 -0.4', gp: 10, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  DENMARK: { id: 'DENMARK', name: '덴마크', flag: '🇩🇰', abilityName: '코펜하겐 기후협약', abilityDesc: '기온 17도 이상 시. GP 상위 3개국 2턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  FRANCE: { id: 'FRANCE', name: '프랑스', flag: '🇫🇷', abilityName: '파리기후변화협약', abilityDesc: '기온 19도 이상 시. 프랑스 제외 모든 국가 1턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  BRAZIL: { id: 'BRAZIL', name: '브라질', flag: '🇧🇷', abilityName: '리우 환경회의', abilityDesc: '브라질 제외 모든 국가 1턴간 경제/환경 선택 반대 적용', gp: 15, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  NKOREA: { id: 'NKOREA', name: '북한', flag: '🇰🇵', abilityName: '내래 핵 쏜다우', abilityDesc: '지구 기온 +1.0 (즉시 적용)', gp: 12, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
 };
 
 export const QUIZ_POOL: QuizQuestion[] = [
