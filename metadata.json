@@ -1,0 +1,8 @@
+{
+  "name": "Climate Crisis: Save the Earth!",
+  "description": "A real-time multiplayer climate negotiation game where players represent different nations to balance economic growth and environmental protection.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
