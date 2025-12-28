@@ -8,6 +8,7 @@ import TemperatureGauge from './components/TemperatureGauge.tsx';
 const App: React.FC = () => {
   const [role, setRole] = useState<'HOST' | 'GUEST' | null>(null);
   const [myCountryId, setMyCountryId] = useState<CountryId | null>(null);
+  const [pendingCountryId, setPendingCountryId] = useState<CountryId | null>(null);
   const [roomInput, setRoomInput] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
   const [isRoomEntered, setIsRoomEntered] = useState(false);
@@ -31,14 +32,14 @@ const App: React.FC = () => {
 
   const lastActionTimestamp = useRef<Record<string, number>>({});
 
-  // --- 실시간 동기화 (기기간 통신) ---
+  // --- 실시간 동기화 ---
   useEffect(() => {
     if (isRoomEntered && role === 'GUEST') {
       const stopPolling = syncService.pollGameState(gameState.roomId, (newState) => {
         setGameState(newState);
-        // 만약 내 닉네임으로 이미 선택된 국가가 있다면 자동 복구
+        // 내 닉네임으로 이미 선택된 국가가 있다면 자동 복구 (재접속)
         if (!myCountryId && nicknameInput) {
-          const recovered = Object.values(newState.countries).find(c => c.isJoined && c.nickname === nicknameInput);
+          const recovered = (Object.values(newState.countries) as Country[]).find(c => c.isJoined && c.nickname === nicknameInput);
           if (recovered) setMyCountryId(recovered.id as CountryId);
         }
       });
@@ -122,7 +123,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [gameState.timer, role]);
 
-  // --- 호스트 로직 ---
   const handleEnterRoom = (r: 'HOST' | 'GUEST') => {
     if (!roomInput.trim()) return alert("방 코드를 입력하세요.");
     if (r === 'GUEST' && !nicknameInput.trim()) return alert("닉네임을 입력하세요.");
@@ -174,7 +174,7 @@ const App: React.FC = () => {
   };
 
   const processUNMeeting = (state: GameState) => {
-    const joinedCountries = Object.values(state.countries).filter(c => c.isJoined);
+    const joinedCountries = (Object.values(state.countries) as Country[]).filter(c => c.isJoined);
     const totalGP = joinedCountries.reduce((sum, c) => sum + c.gp, 0);
     const avgGP = joinedCountries.length > 0 ? totalGP / joinedCountries.length : 0;
 
@@ -203,7 +203,7 @@ const App: React.FC = () => {
   };
 
   const calculateFinalScores = (state: GameState) => {
-    const sorted = Object.values(state.countries)
+    const sorted = (Object.values(state.countries) as Country[])
       .filter(c => c.isJoined)
       .sort((a, b) => b.gp - a.gp);
     sorted.forEach((c, idx) => {
@@ -250,7 +250,18 @@ const App: React.FC = () => {
     }
   }, [gameState.rpsChoiceA, gameState.rpsChoiceB, role]);
 
-  // --- UI 렌더링 ---
+  const confirmCountrySelection = () => {
+    if (!pendingCountryId) return;
+    const country = gameState.countries[pendingCountryId];
+    if (country.isJoined) {
+      alert("방금 다른 학생이 이 국가를 선택했습니다. 다른 국가를 골라주세요!");
+      setPendingCountryId(null);
+      return;
+    }
+    setMyCountryId(pendingCountryId);
+    syncService.joinRoom(gameState.roomId, pendingCountryId, nicknameInput);
+  };
+
   const renderLobby = () => (
     <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center animate-in fade-in duration-1000">
       <div className="mb-10">
@@ -290,29 +301,69 @@ const App: React.FC = () => {
             </div>
             <button onClick={() => setGameState(prev => ({ ...prev, phase: 'SETUP' }))} className="w-full p-6 bg-emerald-500 rounded-3xl font-black text-2xl shadow-xl">게임 설정하기</button>
           </div>
-        ) : (
-          <div className="mt-10 w-full max-w-6xl glass p-10 rounded-[4rem] border border-white/20">
-            <h2 className="text-3xl font-black mb-8">국가를 선택하세요 (닉네임: {nicknameInput})</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-left">
-              {(Object.values(gameState.countries) as Country[]).map(c => {
-                const isTakenByOther = c.isJoined && c.nickname !== nicknameInput;
-                const isMine = c.isJoined && c.nickname === nicknameInput;
-                return (
-                  <button 
-                    key={c.id} disabled={isTakenByOther}
-                    onClick={() => { setMyCountryId(c.id); syncService.joinRoom(gameState.roomId, c.id, nicknameInput); }}
-                    className={`relative p-6 rounded-[2rem] border-4 transition-all ${isMine ? 'bg-blue-600/30 border-blue-400 ring-4' : isTakenByOther ? 'opacity-20 grayscale' : 'bg-slate-800 border-white/5 hover:border-white/30'}`}
-                  >
-                    <div className="flex items-center gap-4 mb-2">
-                      <span className="text-5xl">{c.flag}</span>
-                      <span className="text-xl font-black">{c.name}</span>
-                    </div>
-                    <p className="text-xs text-slate-400 leading-snug">{c.abilityDesc}</p>
-                    {isMine && <div className="absolute top-2 right-4 text-xs font-black text-blue-400 animate-bounce">내 국가</div>}
-                  </button>
-                );
-              })}
+        ) : !myCountryId ? (
+          <div className="mt-10 w-full max-w-6xl flex flex-col lg:flex-row gap-8 animate-in slide-in-from-bottom-10">
+            {/* 국가 리스트 패널 */}
+            <div className="flex-1 glass p-8 rounded-[3rem] border border-white/20">
+              <h2 className="text-2xl font-black mb-6 flex justify-between items-center">
+                <span>국가를 선택하세요</span>
+                <span className="text-sm font-bold opacity-40">닉네임: {nicknameInput}</span>
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(Object.values(gameState.countries) as Country[]).map(c => {
+                  const isTaken = c.isJoined && c.nickname !== nicknameInput;
+                  return (
+                    <button 
+                      key={c.id} disabled={isTaken}
+                      onClick={() => setPendingCountryId(c.id)}
+                      className={`group p-6 rounded-[2rem] border-4 transition-all flex flex-col items-center justify-center gap-2 ${pendingCountryId === c.id ? 'bg-blue-600/30 border-blue-400 ring-4' : isTaken ? 'opacity-20 grayscale cursor-not-allowed' : 'bg-slate-800 border-white/5 hover:border-white/30'}`}
+                    >
+                      <span className="text-5xl group-hover:scale-110 transition-transform">{c.flag}</span>
+                      <span className="text-lg font-black">{c.name}</span>
+                      {isTaken && <span className="text-[10px] font-black text-red-400">이미 선택됨</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* 상세 정보 및 확정 패널 */}
+            <div className="w-full lg:w-96 glass p-8 rounded-[3rem] border border-white/20 bg-indigo-900/10 flex flex-col">
+              <h3 className="text-xl font-black mb-6 uppercase tracking-widest opacity-40">Country Profile</h3>
+              {pendingCountryId ? (
+                <div className="flex-1 flex flex-col animate-in fade-in zoom-in duration-300">
+                  <div className="text-center mb-8">
+                    <span className="text-9xl block mb-4 drop-shadow-2xl">{gameState.countries[pendingCountryId].flag}</span>
+                    <h4 className="text-4xl font-black">{gameState.countries[pendingCountryId].name}</h4>
+                  </div>
+                  
+                  <div className="bg-black/30 p-6 rounded-3xl border border-white/5 mb-8 flex-1">
+                    <div className="text-emerald-400 font-black text-sm uppercase mb-2">국가 고유 스킬</div>
+                    <div className="text-xl font-black mb-2">{gameState.countries[pendingCountryId].abilityName}</div>
+                    <p className="text-slate-300 text-sm leading-relaxed">{gameState.countries[pendingCountryId].abilityDesc}</p>
+                  </div>
+
+                  <button 
+                    onClick={confirmCountrySelection}
+                    className="w-full p-6 bg-blue-600 hover:bg-blue-500 rounded-3xl font-black text-2xl shadow-2xl transition-all active:scale-95"
+                  >
+                    대표 국가 확정
+                  </button>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 opacity-40">
+                  <i className="fa-solid fa-hand-pointer text-6xl mb-4"></i>
+                  <p className="font-bold">국가를 클릭하여<br/>정보를 확인하세요</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-10 glass p-16 rounded-[4rem] border border-white/20 text-center animate-in zoom-in">
+             <span className="text-9xl block mb-6">{gameState.countries[myCountryId].flag}</span>
+             <h2 className="text-5xl font-black mb-2">{gameState.countries[myCountryId].name} 대표부</h2>
+             <p className="text-xl text-emerald-400 font-bold mb-10">입장이 완료되었습니다. 호스트가 게임을 시작할 때까지 기다려주세요.</p>
+             <div className="w-16 h-16 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
           </div>
         )}
       </div>
@@ -331,25 +382,46 @@ const App: React.FC = () => {
       {gameState.phase === 'LOBBY' && renderLobby()}
       
       {gameState.phase === 'SETUP' && role === 'HOST' && (
-        <div className="p-12 max-w-5xl mx-auto space-y-10 animate-in fade-in">
-          <div className="flex justify-between items-center">
-             <h2 className="text-5xl font-black">⚙️ 퀴즈 뱅크 설정</h2>
-             <button onClick={() => {
-               const next = { ...gameState, phase: 'DEVELOPMENT' as GamePhase, timer: 30 };
-               setGameState(next); syncService.syncGameState(next);
-             }} className="px-12 py-5 bg-emerald-500 rounded-3xl font-black text-2xl shadow-xl">게임 시작! ▶</button>
+        <div className="p-12 max-w-6xl mx-auto space-y-10 animate-in fade-in">
+          <div className="flex justify-between items-end">
+             <div>
+               <h2 className="text-5xl font-black mb-2">⚙️ 퀴즈 뱅크 설정</h2>
+               <p className={`text-xl font-bold ${gameState.selectedQuizIds.length === 8 ? 'text-emerald-400' : 'text-red-400'}`}>
+                 현재 {gameState.selectedQuizIds.length}개 선택됨 (8개를 선택해야 게임을 시작할 수 있습니다)
+               </p>
+             </div>
+             <button 
+               disabled={gameState.selectedQuizIds.length !== 8}
+               onClick={() => {
+                 const next = { ...gameState, phase: 'DEVELOPMENT' as GamePhase, timer: 30 };
+                 setGameState(next); syncService.syncGameState(next);
+               }} 
+               className={`px-16 py-6 rounded-3xl font-black text-3xl shadow-xl transition-all ${gameState.selectedQuizIds.length === 8 ? 'bg-emerald-500 hover:bg-emerald-400 active:scale-95' : 'bg-slate-700 opacity-50 cursor-not-allowed'}`}
+             >
+               게임 시작! ▶
+             </button>
           </div>
-          <div className="glass p-10 rounded-[3rem] max-h-[600px] overflow-y-auto custom-scrollbar space-y-4">
-             {QUIZ_POOL.map(q => (
-               <div key={q.id} onClick={() => {
-                 setGameState(prev => {
-                   const selected = prev.selectedQuizIds.includes(q.id) ? prev.selectedQuizIds.filter(id => id !== q.id) : [...prev.selectedQuizIds, q.id];
-                   return { ...prev, selectedQuizIds: selected };
-                 });
-               }} className={`p-6 rounded-2xl cursor-pointer border-4 transition-all ${gameState.selectedQuizIds.includes(q.id) ? 'bg-emerald-500/20 border-emerald-500' : 'bg-white/5 border-transparent'}`}>
-                  <div className="font-black text-xl">{q.question}</div>
-               </div>
-             ))}
+          <div className="glass p-10 rounded-[3rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+             {QUIZ_POOL.map(q => {
+               const isSelected = gameState.selectedQuizIds.includes(q.id);
+               return (
+                 <div 
+                   key={q.id} 
+                   onClick={() => {
+                     setGameState(prev => {
+                       const selected = prev.selectedQuizIds.includes(q.id) 
+                         ? prev.selectedQuizIds.filter(id => id !== q.id) 
+                         : prev.selectedQuizIds.length < 8 ? [...prev.selectedQuizIds, q.id] : prev.selectedQuizIds;
+                       return { ...prev, selectedQuizIds: selected };
+                     });
+                   }} 
+                   className={`p-6 rounded-2xl cursor-pointer border-4 transition-all relative ${isSelected ? 'bg-emerald-500/20 border-emerald-500 shadow-lg' : 'bg-white/5 border-transparent hover:bg-white/10'}`}
+                 >
+                    <div className="font-black text-lg pr-8">{q.question}</div>
+                    {isSelected && <div className="absolute top-4 right-4 text-emerald-400"><i className="fa-solid fa-circle-check"></i></div>}
+                 </div>
+               );
+             })}
           </div>
         </div>
       )}
@@ -397,7 +469,6 @@ const App: React.FC = () => {
                      <div className="bg-black/20 p-8 rounded-[2.5rem] border border-white/5 overflow-y-auto max-h-[400px] custom-scrollbar">
                         <h3 className="text-xl font-black mb-6 uppercase opacity-60">Delegation Status</h3>
                         <div className="space-y-3">
-                           {/* Add comment above fix: Explicitly cast Object.values to Country[] to resolve 'unknown' property access errors */}
                            {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).map(c => (
                              <div key={c.id} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
                                <span className="font-bold text-lg">{c.flag} {c.nickname}</span>
@@ -510,7 +581,6 @@ const App: React.FC = () => {
               <h1 className="text-9xl font-black mb-10 tracking-tighter uppercase">{gameState.temperature >= 20 ? 'Game Over' : 'Earth Saved'}</h1>
               <div className="text-4xl font-black mb-16">Final Temperature: <span className={gameState.temperature >= 20 ? 'text-red-500' : 'text-emerald-400'}>{gameState.temperature.toFixed(1)}℃</span></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                 {/* Add comment above fix: Explicitly cast Object.values to Country[] to resolve 'unknown' property access errors */}
                  {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).sort((a,b)=>b.gp - a.gp).map((c, idx) => (
                    <div key={c.id} className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 flex justify-between items-center shadow-lg">
                       <div className="flex items-center gap-6">
