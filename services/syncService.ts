@@ -1,5 +1,5 @@
 
-import { GameState } from '../types';
+import { GameState } from '../types.ts';
 
 const BUCKET_ID = 'ClimateCrisis_v2_Relay'; 
 const BASE_URL = `https://kvdb.io/${BUCKET_ID}`;
@@ -15,7 +15,6 @@ export const syncGameState = async (state: GameState) => {
   }
 };
 
-// Removed async from the setup function so it returns the cleanup function synchronously
 export const pollGameState = (roomId: string, callback: (state: GameState) => void) => {
   const interval = setInterval(async () => {
     try {

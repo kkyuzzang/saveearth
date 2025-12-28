@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GameState, GamePhase, CountryId, Country, QuizQuestion, RPSResult } from './types';
-import { COUNTRIES, INITIAL_TEMPERATURE, MAX_TEMPERATURE, MAX_TURNS, QUIZ_POOL } from './constants';
-import * as syncService from './services/syncService';
-import TemperatureGauge from './components/TemperatureGauge';
+import { GameState, GamePhase, CountryId, Country, QuizQuestion } from './types.ts';
+import { COUNTRIES, INITIAL_TEMPERATURE, MAX_TEMPERATURE, MAX_TURNS, QUIZ_POOL } from './constants.ts';
+import * as syncService from './services/syncService.ts';
+import TemperatureGauge from './components/TemperatureGauge.tsx';
 
 const App: React.FC = () => {
   const [role, setRole] = useState<'HOST' | 'GUEST' | null>(null);
@@ -31,22 +31,26 @@ const App: React.FC = () => {
 
   const lastActionTimestamp = useRef<Record<string, number>>({});
 
-  // --- 실시간 동기화 ---
+  // --- 실시간 동기화 (기기간 통신) ---
   useEffect(() => {
     if (isRoomEntered && role === 'GUEST') {
       const stopPolling = syncService.pollGameState(gameState.roomId, (newState) => {
         setGameState(newState);
+        // 만약 내 닉네임으로 이미 선택된 국가가 있다면 자동 복구
+        if (!myCountryId && nicknameInput) {
+          const recovered = Object.values(newState.countries).find(c => c.isJoined && c.nickname === nicknameInput);
+          if (recovered) setMyCountryId(recovered.id as CountryId);
+        }
       });
       return () => stopPolling();
     }
-  }, [isRoomEntered, role, gameState.roomId]);
+  }, [isRoomEntered, role, gameState.roomId, nicknameInput, myCountryId]);
 
   useEffect(() => {
     if (isRoomEntered && role === 'HOST') {
       const stopJoins = syncService.pollJoins(gameState.roomId, (countryId, nickname) => {
         setGameState(prev => {
           const cid = countryId as CountryId;
-          // 이미 참가 중이고 닉네임도 같으면 무시 (재접속 허용을 위해 상태 업데이트는 필요할 수 있음)
           if (prev.countries[cid].isJoined && prev.countries[cid].nickname === nickname) return prev;
           
           const next = { ...prev };
@@ -75,6 +79,8 @@ const App: React.FC = () => {
     setGameState(prev => {
       const next = { ...prev };
       const cid = action.countryId as CountryId;
+      if (!next.countries[cid]) return prev;
+
       switch (action.type) {
         case 'SELECT_DEVELOPMENT':
           next.countries[cid].lastChoice = action.choice;
@@ -83,9 +89,13 @@ const App: React.FC = () => {
           if (!action.correct) {
             next.temperature += 0.1;
             next.logs = [`⚠️ ${next.countries[cid].nickname} 오답! 기온 +0.1℃`, ...next.logs];
-          } else if (cid === 'USA') {
-            next.temperature -= 0.5;
-            next.logs = [`🛡️ 미국(${next.countries[cid].nickname}) CCS 기술 성공! 기온 -0.5℃`, ...next.logs];
+          } else {
+            if (cid === 'USA') {
+              next.temperature -= 0.5;
+              next.logs = [`🛡️ 미국(${next.countries[cid].nickname}) CCS 기술 성공! 기온 -0.5℃`, ...next.logs];
+            } else {
+              next.logs = [`✅ ${next.countries[cid].nickname} 정답! (기온 유지)`, ...next.logs];
+            }
           }
           break;
         case 'RPS_CHOICE':
@@ -164,50 +174,52 @@ const App: React.FC = () => {
   };
 
   const processUNMeeting = (state: GameState) => {
-    const joinedCountries = (Object.values(state.countries) as Country[]).filter(c => c.isJoined);
+    const joinedCountries = Object.values(state.countries).filter(c => c.isJoined);
     const totalGP = joinedCountries.reduce((sum, c) => sum + c.gp, 0);
-    const avgGP = totalGP / joinedCountries.length;
+    const avgGP = joinedCountries.length > 0 ? totalGP / joinedCountries.length : 0;
 
-    // 기온 영향 (예시 로직)
+    let meetingLog = "";
     if (avgGP > 55) {
       state.temperature += 0.5;
-      state.logs = ["📢 [UN 보고] 전 세계적 과잉 개발로 기온이 급상승합니다! (+0.5℃)", ...state.logs];
-    } else if (avgGP < 45) {
+      meetingLog = "❌ [UN 보고] 전 세계적 과잉 개발로 인해 지구 온도가 급격히 상승했습니다! (+0.5℃)";
+    } else if (avgGP > 48) {
+      state.temperature += 0.2;
+      meetingLog = "⚠️ [UN 보고] 개발 속도가 환경 회복력을 앞지르고 있습니다. 주의가 필요합니다. (+0.2℃)";
+    } else {
       state.temperature -= 0.3;
-      state.logs = ["📢 [UN 보고] 전 세계의 환경 보호 노력으로 기온이 하락합니다! (-0.3℃)", ...state.logs];
+      meetingLog = "✅ [UN 보고] 전 세계의 적극적인 환경 보호 덕분에 기온 상승세가 꺾였습니다. (-0.3℃)";
     }
+    
+    state.logs = [meetingLog, ...state.logs];
 
-    // 개별 국가 평가
     joinedCountries.forEach(c => {
-      if (c.gp <= 45) {
-        state.logs = [`🌿 [지속가능] ${c.nickname}(${c.name})는 환경 보호의 귀감입니다.`, ...state.logs];
-      } else if (c.gp >= 55) {
-        state.logs = [`⚠️ [환경파괴] ${c.nickname}(${c.name})는 과도한 개발로 비난받습니다. GP 3 차감.`, ...state.logs];
-        state.countries[c.id].gp -= 3;
+      if (c.gp >= 58) {
+        state.logs = [`⚠️ [환경 파괴] ${c.nickname}(${c.name})는 과도한 탄소 배출로 국제적 비난을 받습니다. (GP -5)`, ...state.logs];
+        state.countries[c.id].gp -= 5;
+      } else if (c.gp <= 45) {
+        state.logs = [`🌿 [지속 가능] ${c.nickname}(${c.name})는 기후 정의 실현의 모범 국가로 선정되었습니다.`, ...state.logs];
       }
     });
   };
 
   const calculateFinalScores = (state: GameState) => {
-    const sorted = (Object.values(state.countries) as Country[])
+    const sorted = Object.values(state.countries)
       .filter(c => c.isJoined)
       .sort((a, b) => b.gp - a.gp);
     sorted.forEach((c, idx) => {
-      state.countries[c.id].score = Math.max(0, 100 - (idx * 10));
+      state.countries[c.id as CountryId].score = Math.max(0, 100 - (idx * 10));
     });
   };
 
-  // --- 가위바위보 대결 시작 (Added handleRPS) ---
   const handleRPS = (targetA: CountryId, targetB: CountryId) => {
     setGameState(prev => {
       const next = { ...prev, rpsTargetA: targetA, rpsTargetB: targetB, rpsChoiceA: null, rpsChoiceB: null };
-      next.logs = [`⚔️ 가위바위보 대결 시작! (${next.countries[targetA].name} vs ${next.countries[targetB].name})`, ...next.logs];
+      next.logs = [`⚔️ 가위바위보 대결 발동! (${next.countries[targetA].name} vs ${next.countries[targetB].name})`, ...next.logs];
       syncService.syncGameState(next);
       return next;
     });
   };
 
-  // --- 가위바위보 판정 (useEffect) ---
   useEffect(() => {
     if (role === 'HOST' && gameState.rpsChoiceA && gameState.rpsChoiceB) {
       const a = gameState.rpsChoiceA;
@@ -238,90 +250,88 @@ const App: React.FC = () => {
     }
   }, [gameState.rpsChoiceA, gameState.rpsChoiceB, role]);
 
-  // --- UI ---
+  // --- UI 렌더링 ---
   const renderLobby = () => (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
+    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center animate-in fade-in duration-1000">
       <div className="mb-10">
         <i className="fa-solid fa-earth-asia text-9xl text-emerald-400 mb-6 drop-shadow-[0_0_40px_rgba(52,211,153,0.5)]"></i>
         <h1 className="text-7xl font-black tracking-tighter mb-2 italic">CLIMATE <span className="text-emerald-400">WAR</span></h1>
-        <p className="text-xl text-slate-400 font-bold uppercase tracking-[0.3em]">Save the Earth together</p>
+        <p className="text-xl text-slate-400 font-bold uppercase tracking-[0.3em]">Negotiate for our future</p>
       </div>
 
       <div className="w-full max-w-sm space-y-4">
-        <input 
-          type="text" placeholder="방 코드 (예: CLASS1)" value={roomInput}
-          onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
-          className="w-full p-5 bg-white/5 border-2 border-white/10 rounded-3xl text-center text-3xl font-black outline-none focus:border-emerald-500 transition-all"
-        />
-        {!role && (
+        {!role ? (
           <div className="space-y-4">
+            <input 
+              type="text" placeholder="방 코드 (예: CLASS1)" value={roomInput}
+              onChange={(e) => setRoomInput(e.target.value.toUpperCase())}
+              className="w-full p-5 bg-white/5 border-2 border-white/10 rounded-3xl text-center text-3xl font-black outline-none focus:border-emerald-500 transition-all"
+            />
             <input 
               type="text" placeholder="내 닉네임" value={nicknameInput}
               onChange={(e) => setNicknameInput(e.target.value)}
               className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl text-center text-xl font-bold outline-none"
             />
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => handleEnterRoom('HOST')} className="p-6 bg-emerald-600 hover:bg-emerald-500 rounded-3xl font-black text-xl shadow-xl">교사 입장</button>
-              <button onClick={() => handleEnterRoom('GUEST')} className="p-6 bg-blue-600 hover:bg-blue-500 rounded-3xl font-black text-xl shadow-xl">학생 입장</button>
+              <button onClick={() => handleEnterRoom('HOST')} className="p-6 bg-emerald-600 hover:bg-emerald-500 rounded-3xl font-black text-xl shadow-xl transition-all active:scale-95">교사 입장</button>
+              <button onClick={() => handleEnterRoom('GUEST')} className="p-6 bg-blue-600 hover:bg-blue-500 rounded-3xl font-black text-xl shadow-xl transition-all active:scale-95">학생 입장</button>
+            </div>
+          </div>
+        ) : role === 'HOST' ? (
+          <div className="mt-10 w-full max-w-4xl glass p-10 rounded-[3rem] border border-white/20">
+            <h2 className="text-4xl font-black mb-10 text-emerald-400">Room #{gameState.roomId}</h2>
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-10">
+              {(Object.values(gameState.countries) as Country[]).map(c => (
+                <div key={c.id} className={`p-4 rounded-2xl border-2 transition-all ${c.isJoined ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800 border-transparent opacity-30'}`}>
+                  <span className="text-3xl block">{c.flag}</span>
+                  <span className="text-xs font-black truncate">{c.nickname || c.name}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setGameState(prev => ({ ...prev, phase: 'SETUP' }))} className="w-full p-6 bg-emerald-500 rounded-3xl font-black text-2xl shadow-xl">게임 설정하기</button>
+          </div>
+        ) : (
+          <div className="mt-10 w-full max-w-6xl glass p-10 rounded-[4rem] border border-white/20">
+            <h2 className="text-3xl font-black mb-8">국가를 선택하세요 (닉네임: {nicknameInput})</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-left">
+              {(Object.values(gameState.countries) as Country[]).map(c => {
+                const isTakenByOther = c.isJoined && c.nickname !== nicknameInput;
+                const isMine = c.isJoined && c.nickname === nicknameInput;
+                return (
+                  <button 
+                    key={c.id} disabled={isTakenByOther}
+                    onClick={() => { setMyCountryId(c.id); syncService.joinRoom(gameState.roomId, c.id, nicknameInput); }}
+                    className={`relative p-6 rounded-[2rem] border-4 transition-all ${isMine ? 'bg-blue-600/30 border-blue-400 ring-4' : isTakenByOther ? 'opacity-20 grayscale' : 'bg-slate-800 border-white/5 hover:border-white/30'}`}
+                  >
+                    <div className="flex items-center gap-4 mb-2">
+                      <span className="text-5xl">{c.flag}</span>
+                      <span className="text-xl font-black">{c.name}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-snug">{c.abilityDesc}</p>
+                    {isMine && <div className="absolute top-2 right-4 text-xs font-black text-blue-400 animate-bounce">내 국가</div>}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
-
-      {role === 'HOST' && isRoomEntered && (
-        <div className="mt-10 w-full max-w-4xl glass p-10 rounded-[3rem] border border-white/20">
-          <h2 className="text-4xl font-black mb-10 text-emerald-400">Room #{gameState.roomId}</h2>
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-10">
-            {(Object.values(gameState.countries) as Country[]).map(c => (
-              <div key={c.id} className={`p-4 rounded-2xl border-2 transition-all ${c.isJoined ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800 border-transparent opacity-30'}`}>
-                <span className="text-3xl block">{c.flag}</span>
-                <span className="text-xs font-black truncate">{c.nickname || c.name}</span>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => setGameState(prev => ({ ...prev, phase: 'SETUP' }))} className="w-full p-6 bg-emerald-500 rounded-3xl font-black text-2xl">게임 설정하기</button>
-        </div>
-      )}
-
-      {role === 'GUEST' && isRoomEntered && (
-        <div className="mt-10 w-full max-w-6xl glass p-10 rounded-[4rem] border border-white/20">
-          <h2 className="text-3xl font-black mb-8">국가를 선택하세요 (닉네임: {nicknameInput})</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(Object.values(gameState.countries) as Country[]).map(c => {
-              const isTakenByOther = c.isJoined && c.nickname !== nicknameInput;
-              const isMine = c.isJoined && c.nickname === nicknameInput;
-              return (
-                <button 
-                  key={c.id} disabled={isTakenByOther}
-                  onClick={() => { setMyCountryId(c.id); syncService.joinRoom(gameState.roomId, c.id, nicknameInput); }}
-                  className={`relative p-6 rounded-[2rem] text-left border-4 transition-all ${isMine ? 'bg-blue-600/30 border-blue-400 ring-4' : isTakenByOther ? 'opacity-20 grayscale' : 'bg-slate-800 border-white/5 hover:border-white/30'}`}
-                >
-                  <div className="flex items-center gap-4 mb-2">
-                    <span className="text-5xl">{c.flag}</span>
-                    <span className="text-xl font-black">{c.name}</span>
-                  </div>
-                  <p className="text-xs text-slate-400">{c.abilityDesc}</p>
-                  {isMine && <div className="absolute top-2 right-4 text-xs font-black text-blue-400">선택됨</div>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 
-  const phaseAssets = role ? (gameState.phase === 'DEVELOPMENT' ? { title: "경제 개발", icon: "fa-industry", img: "https://images.unsplash.com/photo-1516937941344-00b4e0337589?w=1200", color: "from-orange-600" } :
+  const phaseAssets = role ? (
+    gameState.phase === 'DEVELOPMENT' ? { title: "경제 개발", icon: "fa-industry", img: "https://images.unsplash.com/photo-1516937941344-00b4e0337589?w=1200", color: "from-orange-600" } :
     gameState.phase === 'QUIZ' ? { title: "환경 퀴즈", icon: "fa-brain", img: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200", color: "from-blue-600" } :
     gameState.phase === 'DISCUSSION' ? { title: "자유 토론", icon: "fa-handshake", img: "https://images.unsplash.com/photo-1521791136064-7986c2920216?w=1200", color: "from-indigo-600" } :
-    gameState.phase === 'UN_MEETING' ? { title: "UN 기후 총회", icon: "fa-building-columns", img: "https://images.unsplash.com/photo-1541873676946-8412460408c2?w=1200", color: "from-emerald-600" } : null) : null;
+    gameState.phase === 'UN_MEETING' ? { title: "UN 기후 총회", icon: "fa-building-columns", img: "https://images.unsplash.com/photo-1541873676946-8412460408c2?w=1200", color: "from-emerald-600" } : null
+  ) : null;
 
   return (
     <div className={`min-h-screen transition-bg ${gameState.temperature >= 19 ? 'bg-red-950' : 'bg-slate-900'}`}>
       {gameState.phase === 'LOBBY' && renderLobby()}
       
       {gameState.phase === 'SETUP' && role === 'HOST' && (
-        <div className="p-12 max-w-5xl mx-auto space-y-10">
+        <div className="p-12 max-w-5xl mx-auto space-y-10 animate-in fade-in">
           <div className="flex justify-between items-center">
              <h2 className="text-5xl font-black">⚙️ 퀴즈 뱅크 설정</h2>
              <button onClick={() => {
@@ -345,10 +355,10 @@ const App: React.FC = () => {
       )}
 
       {gameState.phase !== 'LOBBY' && gameState.phase !== 'SETUP' && gameState.phase !== 'END' && (
-        <div className="max-w-[1400px] mx-auto p-4 md:p-8 space-y-8">
+        <div className="max-w-[1400px] mx-auto p-4 md:p-8 space-y-8 animate-in slide-in-from-bottom-4 duration-700">
           {phaseAssets && (
             <div className="relative h-64 rounded-[3rem] overflow-hidden shadow-2xl border border-white/10">
-              <img src={phaseAssets.img} className="absolute inset-0 w-full h-full object-cover opacity-20" />
+              <img src={phaseAssets.img} className="absolute inset-0 w-full h-full object-cover opacity-20" alt="phase" />
               <div className={`absolute inset-0 bg-gradient-to-r ${phaseAssets.color}/60 to-transparent`}></div>
               <div className="absolute inset-0 flex items-center px-12">
                 <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center text-4xl mr-6"><i className={`fa-solid ${phaseAssets.icon}`}></i></div>
@@ -380,13 +390,14 @@ const App: React.FC = () => {
               {role === 'HOST' ? (
                 <div className="glass p-10 rounded-[3rem] border border-white/10 h-full flex flex-col">
                   <div className="flex justify-between items-center mb-10">
-                    <h2 className="text-4xl font-black tracking-tight">CONTROL TOWER</h2>
-                    <button onClick={nextPhase} className="px-12 py-5 bg-indigo-600 hover:bg-indigo-500 rounded-3xl font-black text-xl shadow-2xl transition-all">다음 단계로 이동 ▶</button>
+                    <h2 className="text-4xl font-black tracking-tight uppercase italic">Control Tower</h2>
+                    <button onClick={nextPhase} className="px-12 py-5 bg-indigo-600 hover:bg-indigo-500 rounded-3xl font-black text-xl shadow-2xl transition-all active:scale-95">다음 단계로 이동 ▶</button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1">
-                     <div className="bg-black/20 p-8 rounded-[2.5rem] border border-white/5 overflow-y-auto max-h-[400px]">
+                     <div className="bg-black/20 p-8 rounded-[2.5rem] border border-white/5 overflow-y-auto max-h-[400px] custom-scrollbar">
                         <h3 className="text-xl font-black mb-6 uppercase opacity-60">Delegation Status</h3>
                         <div className="space-y-3">
+                           {/* Add comment above fix: Explicitly cast Object.values to Country[] to resolve 'unknown' property access errors */}
                            {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).map(c => (
                              <div key={c.id} className="flex justify-between items-center p-4 bg-white/5 rounded-2xl">
                                <span className="font-bold text-lg">{c.flag} {c.nickname}</span>
@@ -398,14 +409,14 @@ const App: React.FC = () => {
                      <div className="bg-black/20 p-8 rounded-[2.5rem] border border-white/5">
                         <h3 className="text-xl font-black mb-6 uppercase opacity-60">Abilities</h3>
                         <div className="grid grid-cols-1 gap-4">
-                           <button onClick={() => handleRPS('KOREA', 'USA')} className="p-5 bg-indigo-600/30 hover:bg-indigo-600 rounded-2xl font-black flex justify-between items-center"><span>한-미 가위바위보 대결</span><i className="fa-solid fa-swords"></i></button>
+                           <button onClick={() => handleRPS('KOREA', 'USA')} className="p-5 bg-indigo-600/30 hover:bg-indigo-600 rounded-2xl font-black flex justify-between items-center transition-all"><span>한-미 가위바위보 대결</span><i className="fa-solid fa-swords"></i></button>
                            <button onClick={() => {
                              setGameState(prev => {
                                const next = { ...prev, temperature: prev.temperature + 1.0 };
                                next.logs = ["📢 북한: 내래 핵 쏜다우! 기온 +1.0℃", ...next.logs];
                                syncService.syncGameState(next); return next;
                              });
-                           }} className="p-5 bg-red-600/30 hover:bg-red-600 rounded-2xl font-black flex justify-between items-center"><span>북한 핵 도발</span><i className="fa-solid fa-radiation"></i></button>
+                           }} className="p-5 bg-red-600/30 hover:bg-red-600 rounded-2xl font-black flex justify-between items-center transition-all"><span>북한 핵 도발</span><i className="fa-solid fa-radiation"></i></button>
                         </div>
                      </div>
                   </div>
@@ -429,7 +440,7 @@ const App: React.FC = () => {
                    <div className="glass p-12 rounded-[4rem] border border-white/10 bg-slate-800/40 min-h-[450px] flex items-center justify-center">
                      {myCountryId ? (
                        gameState.phase === 'DEVELOPMENT' ? (
-                         <div className="w-full text-center space-y-12">
+                         <div className="w-full text-center space-y-12 animate-in zoom-in">
                             <h3 className="text-4xl font-black">개발 방향을 결정하세요</h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                {[
@@ -446,7 +457,7 @@ const App: React.FC = () => {
                             </div>
                          </div>
                        ) : gameState.phase === 'QUIZ' ? (
-                        <div className="w-full max-w-2xl space-y-8 text-center">
+                        <div className="w-full max-w-2xl space-y-8 text-center animate-in zoom-in">
                            <h3 className="text-4xl font-black italic">CLIMATE QUIZ</h3>
                            {gameState.currentQuizId && (() => {
                              const quiz = [...QUIZ_POOL, ...gameState.customQuizzes].find(q => q.id === gameState.currentQuizId);
@@ -462,8 +473,8 @@ const App: React.FC = () => {
                              ) : null;
                            })()}
                         </div>
-                       ) : gameState.rpsTargetA === myCountryId || gameState.rpsTargetB === myCountryId ? (
-                         <div className="w-full text-center space-y-10">
+                       ) : (gameState.rpsTargetA === myCountryId || gameState.rpsTargetB === myCountryId) ? (
+                         <div className="w-full text-center space-y-10 animate-in bounce-in">
                             <h3 className="text-4xl font-black text-red-500 animate-pulse uppercase">가위바위보 대결!</h3>
                             <div className="grid grid-cols-3 gap-6 max-w-lg mx-auto">
                                {[
@@ -471,7 +482,7 @@ const App: React.FC = () => {
                                  { id: 'PAPER', icon: 'fa-hand', label: '보' },
                                  { id: 'SCISSORS', icon: 'fa-hand-scissors', label: '가위' }
                                ].map(item => (
-                                 <button key={item.id} onClick={() => syncService.sendAction(gameState.roomId, { type: 'RPS_CHOICE', countryId: myCountryId, choice: item.id })} className="p-8 bg-indigo-600 hover:bg-indigo-500 rounded-3xl transition-all active:scale-95 flex flex-col items-center">
+                                 <button key={item.id} onClick={() => syncService.sendAction(gameState.roomId, { type: 'RPS_CHOICE', countryId: myCountryId, choice: item.id as any })} className="p-8 bg-indigo-600 hover:bg-indigo-500 rounded-3xl transition-all active:scale-95 flex flex-col items-center shadow-xl">
                                     <i className={`fa-solid ${item.icon} text-4xl mb-4`}></i>
                                     <span className="font-black">{item.label}</span>
                                  </button>
@@ -480,7 +491,7 @@ const App: React.FC = () => {
                          </div>
                        ) : (
                          <div className="text-center opacity-20">
-                            <i className="fa-solid fa-hourglass-half text-9xl mb-6"></i>
+                            <i className="fa-solid fa-hourglass-half text-9xl mb-6 animate-spin duration-[3000ms]"></i>
                             <h3 className="text-4xl font-black uppercase">Please Wait...</h3>
                          </div>
                        )
@@ -494,17 +505,18 @@ const App: React.FC = () => {
       )}
 
       {gameState.phase === 'END' && (
-        <div className="min-h-screen flex items-center justify-center p-8 bg-black/90 backdrop-blur-3xl">
+        <div className="min-h-screen flex items-center justify-center p-8 bg-black/90 backdrop-blur-3xl animate-in fade-in duration-1000">
            <div className={`w-full max-w-5xl p-16 rounded-[4rem] border-8 text-center ${gameState.temperature >= 20 ? 'border-red-600 bg-red-950/20' : 'border-emerald-500 bg-emerald-950/20'}`}>
               <h1 className="text-9xl font-black mb-10 tracking-tighter uppercase">{gameState.temperature >= 20 ? 'Game Over' : 'Earth Saved'}</h1>
               <div className="text-4xl font-black mb-16">Final Temperature: <span className={gameState.temperature >= 20 ? 'text-red-500' : 'text-emerald-400'}>{gameState.temperature.toFixed(1)}℃</span></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                 {/* Add comment above fix: Explicitly cast Object.values to Country[] to resolve 'unknown' property access errors */}
                  {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).sort((a,b)=>b.gp - a.gp).map((c, idx) => (
-                   <div key={c.id} className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 flex justify-between items-center">
+                   <div key={c.id} className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 flex justify-between items-center shadow-lg">
                       <div className="flex items-center gap-6">
                          <span className="text-3xl font-black text-slate-500">#{idx+1}</span>
                          <span className="text-5xl">{c.flag}</span>
-                         <span className="text-xl font-black">{c.nickname}</span>
+                         <span className="text-xl font-black truncate max-w-[120px]">{c.nickname}</span>
                       </div>
                       <div className="text-right">
                          <div className="text-3xl font-black text-emerald-400">{c.gp} <span className="text-sm opacity-40 uppercase">GP</span></div>

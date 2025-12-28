@@ -11,6 +11,8 @@
     <style>
         body { font-family: 'Pretendard', sans-serif; overflow-x: hidden; }
         .glass { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
         @keyframes pulse-red {
             0% { transform: scale(1); opacity: 1; }
             50% { transform: scale(1.05); opacity: 0.8; }
@@ -23,6 +25,7 @@
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
@@ -32,5 +35,7 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
     <div id="root"></div>
+    <!-- 엔트리 포인트 추가 -->
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
