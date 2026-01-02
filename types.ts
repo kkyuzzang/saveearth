@@ -15,7 +15,7 @@ export interface Country {
   lastChoice: DevelopmentChoice;
   isAbilityUsed: boolean;
   isJoined: boolean;
-  nickname: string; // 학생 닉네임 추가
+  nickname: string;
   score: number;
 }
 
@@ -42,6 +42,16 @@ export interface GameState {
   rpsTargetB: CountryId | null;
   rpsChoiceA: 'ROCK' | 'PAPER' | 'SCISSORS' | null;
   rpsChoiceB: 'ROCK' | 'PAPER' | 'SCISSORS' | null;
+  lastTurnChoices: Record<CountryId, DevelopmentChoice>;
+  // Ability Active Flags
+  activeEffects: {
+    swedenWaiting: boolean; // Sweden activated, waiting for turn end
+    japanActive: boolean;
+    denmarkTurnsLeft: number;
+    franceActive: boolean;
+    brazilActive: boolean;
+    tuvaluWaiting: boolean;
+  };
 }
 
 export enum RPSResult {
