@@ -104,11 +104,16 @@ const App: React.FC = () => {
         const stopPolling = syncService.pollGameState(gameState.roomId, (newState) => {
           if (newState.phase !== gameState.phase) playSfx(SFX.TRANSITION);
           if (newState.temperature > gameState.temperature) playSfx(SFX.ALARM);
-          setGameState(newState);
+          
+          // 동기화된 닉네임을 통해 내 국가 확정
           if (nicknameInput && !myCountryId) {
             const me = (Object.values(newState.countries) as Country[]).find(c => c.nickname === nicknameInput);
-            if (me) setMyCountryId(me.id as CountryId);
+            if (me) {
+              setMyCountryId(me.id as CountryId);
+              playSfx(SFX.SUCCESS);
+            }
           }
+          setGameState(newState);
         });
         return () => stopPolling();
       } else if (role === 'HOST') {
@@ -133,10 +138,14 @@ const App: React.FC = () => {
       switch (action.type) {
         case 'JOIN':
           if (next.countries[cid] && !next.countries[cid].isJoined) {
-            next.countries[cid].isJoined = true;
-            next.countries[cid].nickname = action.nickname;
-            next.logs = [`${next.countries[cid].flag} ${action.nickname}(${next.countries[cid].name}) 입장!`, ...next.logs];
-            playSfx(SFX.JOIN);
+            // 중복 닉네임 방지 (선택 사항이나 권장)
+            const isNickTaken = (Object.values(next.countries) as Country[]).some(c => c.nickname === action.nickname);
+            if (!isNickTaken) {
+              next.countries[cid].isJoined = true;
+              next.countries[cid].nickname = action.nickname;
+              next.logs = [`${next.countries[cid].flag} ${action.nickname}(${next.countries[cid].name}) 입장!`, ...next.logs];
+              playSfx(SFX.JOIN);
+            }
           }
           break;
         case 'SELECT_DEVELOPMENT':
@@ -214,6 +223,7 @@ const App: React.FC = () => {
         await syncService.clearActions(rid);
         setGameState(initialState);
       } else {
+        // GUEST는 폴링 시작을 위해 roomId 설정
         setGameState(prev => ({ ...prev, roomId: rid }));
       }
       
@@ -387,12 +397,12 @@ const App: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
                 {(Object.values(gameState.countries) as Country[]).map(c => (
-                  <div key={c.id} className={`p-8 rounded-[3rem] border-4 transition-all flex items-center gap-10 min-h-[160px] ${c.isJoined ? 'bg-emerald-500/20 border-emerald-500 scale-105 shadow-xl' : 'bg-white/5 border-white/5 opacity-30'}`}>
-                    <span className="text-8xl shrink-0 drop-shadow-lg">{c.flag}</span>
+                  <div key={c.id} className={`p-10 rounded-[3.5rem] border-4 transition-all flex items-center gap-10 min-h-[180px] ${c.isJoined ? 'bg-emerald-500/20 border-emerald-500 scale-105 shadow-xl' : 'bg-white/5 border-white/5 opacity-30'}`}>
+                    <span className="text-[100px] shrink-0 drop-shadow-2xl">{c.flag}</span>
                     <div className="text-left overflow-hidden flex-1">
-                      <div className="text-base opacity-60 font-black uppercase tracking-widest mb-2 truncate">{c.name}</div>
-                      <div className="text-3xl font-extrabold truncate text-white leading-tight">
-                        {c.nickname || <span className="text-white/20 italic">입장 대기 중...</span>}
+                      <div className="text-sm opacity-60 font-black uppercase tracking-[0.2em] mb-2 truncate">{c.name}</div>
+                      <div className="text-4xl font-black truncate text-white leading-tight">
+                        {c.nickname || <span className="text-white/10 italic text-2xl">입장 대기</span>}
                       </div>
                     </div>
                   </div>
@@ -409,7 +419,7 @@ const App: React.FC = () => {
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-6">
                   {(Object.values(gameState.countries) as Country[]).map(c => {
-                    const isTaken = c.isJoined && c.nickname !== nicknameInput;
+                    const isTaken = c.isJoined;
                     return (
                       <button 
                         key={c.id} 
@@ -628,7 +638,7 @@ const App: React.FC = () => {
                       {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).map(c => (
                         <div key={c.id} className="p-10 bg-white/5 rounded-[3.5rem] border-2 border-white/5 flex flex-col gap-8 shadow-xl relative overflow-hidden group hover:bg-white/10 transition-all">
                           <div className="flex items-center gap-8">
-                            <span className="text-8xl group-hover:rotate-12 transition-transform duration-500">{c.flag}</span>
+                            <span className="text-[90px] group-hover:rotate-12 transition-transform duration-500">{c.flag}</span>
                             <div className="text-left overflow-hidden">
                               <div className="text-4xl font-black italic text-white truncate leading-tight">{c.nickname}</div>
                               <div className="text-sm opacity-40 font-bold uppercase tracking-[0.2em]">{c.name}</div>
@@ -735,42 +745,6 @@ const App: React.FC = () => {
               </section>
             </div>
           </main>
-        </div>
-      )}
-
-      {/* 최종 결과 화면 */}
-      {gameState.phase === 'END' && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 bg-black animate-in fade-in duration-1000">
-           <div className="absolute inset-0 z-0">
-             <img src={gameState.temperature >= 20 ? 'https://images.unsplash.com/photo-1473081556163-2a17de81fc97?auto=format&fit=crop&q=80&w=2000' : 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=2000'} className="w-full h-full object-cover opacity-50" />
-             <div className="absolute inset-0 bg-black/60"></div>
-           </div>
-           
-           <div className={`relative z-10 w-full max-w-[1400px] p-24 rounded-[7rem] border-[24px] text-center shadow-[0_0_200px_rgba(0,0,0,1)] glass backdrop-blur-3xl ${gameState.temperature >= 20 ? 'border-red-600 bg-red-950/40' : 'border-emerald-500 bg-emerald-950/40'}`}>
-              <h1 className="text-[200px] font-black mb-12 tracking-tighter uppercase italic leading-none drop-shadow-2xl text-white">
-                {gameState.temperature >= 20 ? 'WORLD FAILED' : 'WORLD SAVED'}
-              </h1>
-              <div className="text-9xl font-black mb-24 italic tracking-tighter text-white">FINAL TEMP: <span className={`px-24 py-8 rounded-[5rem] bg-black/70 shadow-2xl ${gameState.temperature >= 20 ? 'text-red-500 animate-crisis' : 'text-emerald-400'}`}>{gameState.temperature.toFixed(1)}℃</span></div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 text-left">
-                 {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).sort((a,b)=>b.gp - a.gp).map((c, idx) => (
-                   <div key={c.id} className="bg-white/10 backdrop-blur-2xl p-12 rounded-[5rem] border border-white/10 flex justify-between items-center shadow-2xl hover:bg-white/20 transition-all transform hover:scale-105">
-                      <div className="flex items-center gap-10">
-                         <span className="text-7xl font-black text-white/20 italic">#{idx+1}</span>
-                         <span className="text-[120px] drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]">{c.flag}</span>
-                         <div className="flex flex-col">
-                           <span className="text-5xl font-black italic text-white leading-tight">{c.nickname}</span>
-                           <span className="text-sm font-bold opacity-40 uppercase tracking-[0.3em]">{c.name}</span>
-                         </div>
-                      </div>
-                      <div className="text-right">
-                         <div className="text-7xl font-black text-emerald-400 tabular-nums leading-none">{c.gp}<br/><span className="text-2xl opacity-40">GP</span></div>
-                      </div>
-                   </div>
-                 ))}
-              </div>
-              <button onClick={() => window.location.reload()} className="mt-24 px-48 py-16 bg-white text-slate-900 rounded-full font-black text-7xl shadow-[0_40px_120px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all italic tracking-tighter">RESTART CAMPAIGN</button>
-           </div>
         </div>
       )}
     </div>
