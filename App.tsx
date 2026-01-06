@@ -24,7 +24,7 @@ const PHASE_THEMES: Record<GamePhase, { img: string; color: string; label: strin
   SETUP: { 
     img: 'https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&q=80&w=2000', 
     color: 'from-emerald-950 to-slate-900', 
-    label: '환경 데이터 설정' 
+    label: '작전 수립 (문제 관리)' 
   },
   DEVELOPMENT: { 
     img: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=2000', 
@@ -99,13 +99,11 @@ const App: React.FC = () => {
     audio.play().catch(() => {}); 
   };
 
-  // Fix: Defined currentTheme based on the current game phase.
   const currentTheme = PHASE_THEMES[gameState.phase];
 
-  // Fix: Implemented adjustTemp function to allow the host to manually adjust the global temperature.
   const adjustTemp = (amount: number) => {
     setGameState(prev => {
-      const nextTemp = Math.min(MAX_TEMPERATURE, Math.max(0, prev.temperature + amount));
+      const nextTemp = Math.min(MAX_TEMPERATURE, Math.max(INITIAL_TEMPERATURE, prev.temperature + amount));
       const next = { ...prev, temperature: nextTemp };
       syncService.syncGameState(next);
       return next;
@@ -154,9 +152,8 @@ const App: React.FC = () => {
           if (next.countries[cid] && !next.countries[cid].isJoined) {
             next.countries[cid].isJoined = true;
             next.countries[cid].nickname = action.nickname;
-            next.logs = [`🚩 ${next.countries[cid].flag} ${action.nickname}(${next.countries[cid].name}) 지역 점령 완료!`, ...next.logs];
+            next.logs = [`🚩 ${next.countries[cid].flag} ${action.nickname}(${next.countries[cid].name}) 참전 확인!`, ...next.logs];
             playSfx(SFX.JOIN);
-            // 즉각적인 상태 전파를 위해 호스트에서 저장 트리거
             syncService.syncGameState(next);
           }
           break;
@@ -167,10 +164,10 @@ const App: React.FC = () => {
         case 'QUIZ_RESULT':
           if (!action.correct) {
             next.temperature += 0.1;
-            next.logs = [`⚠️ ${next.countries[cid].nickname} 전략 오류! 기온 상승`, ...next.logs];
+            next.logs = [`⚠️ ${next.countries[cid].nickname} 전략 실패! 기온 상승`, ...next.logs];
             playSfx(SFX.ALARM);
           } else {
-            next.logs = [`✅ ${next.countries[cid].nickname} 전략 성공!`, ...next.logs];
+            next.logs = [`✅ ${next.countries[cid].nickname} 전략 적중!`, ...next.logs];
             playSfx(SFX.SUCCESS);
           }
           syncService.syncGameState(next);
@@ -183,7 +180,7 @@ const App: React.FC = () => {
   const handleEnterRoom = async (r: 'HOST' | 'GUEST') => {
     const rid = roomInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!rid) return alert("방 코드를 입력해주세요.");
-    if (r === 'GUEST' && !nicknameInput.trim()) return alert("닉네임을 입력하세요.");
+    if (r === 'GUEST' && !nicknameInput.trim()) return alert("사령관의 이름을 입력하세요.");
     
     setIsConnecting(true);
     playSfx(SFX.CLICK);
@@ -200,19 +197,28 @@ const App: React.FC = () => {
       setRole(r);
       setIsRoomEntered(true);
     } catch (e) {
-      alert("연결 오류가 발생했습니다.");
+      alert("전술망 연결 실패");
     } finally {
       setIsConnecting(false);
     }
   };
 
   const nextPhase = () => {
+    if (gameState.phase === 'SETUP' && gameState.selectedQuizIds.length !== MAX_TURNS) {
+      alert(`정확히 ${MAX_TURNS}개의 퀴즈를 선택해야 작전을 시작할 수 있습니다. (현재: ${gameState.selectedQuizIds.length}개)`);
+      return;
+    }
+
     playSfx(SFX.TRANSITION);
     setGameState(prev => {
       let next = { ...prev };
       if (next.phase === 'LOBBY') next.phase = 'SETUP';
       else if (next.phase === 'SETUP') { next.phase = 'DEVELOPMENT'; next.timer = 30; }
-      else if (next.phase === 'DEVELOPMENT') { next.phase = 'QUIZ'; next.timer = 60; next.currentQuizId = next.selectedQuizIds[next.turn-1]; }
+      else if (next.phase === 'DEVELOPMENT') { 
+        next.phase = 'QUIZ'; 
+        next.timer = 60; 
+        next.currentQuizId = next.selectedQuizIds[next.turn - 1]; 
+      }
       else if (next.phase === 'QUIZ') { next.phase = 'DISCUSSION'; next.timer = 180; }
       else if (next.phase === 'DISCUSSION') {
         if (next.turn === MAX_TURNS) next.phase = 'END';
@@ -223,24 +229,55 @@ const App: React.FC = () => {
     });
   };
 
+  const toggleQuiz = (id: number) => {
+    setGameState(prev => {
+      const isSelected = prev.selectedQuizIds.includes(id);
+      let nextSelected: number[];
+      if (isSelected) {
+        nextSelected = prev.selectedQuizIds.filter(qId => qId !== id);
+      } else {
+        if (prev.selectedQuizIds.length >= MAX_TURNS) {
+          alert(`최대 ${MAX_TURNS}개만 선택 가능합니다.`);
+          return prev;
+        }
+        nextSelected = [...prev.selectedQuizIds, id];
+      }
+      return { ...prev, selectedQuizIds: nextSelected };
+    });
+    playSfx(SFX.CLICK);
+  };
+
+  const addCustomQuiz = () => {
+    if (!newQuiz.question.trim()) return;
+    const quiz: QuizQuestion = {
+      id: Date.now(),
+      question: newQuiz.question,
+      options: [...newQuiz.options],
+      answer: newQuiz.answer,
+      explanation: '교사 직접 출제'
+    };
+    setGameState(prev => ({
+      ...prev,
+      customQuizzes: [...prev.customQuizzes, quiz],
+      selectedQuizIds: prev.selectedQuizIds.length < MAX_TURNS ? [...prev.selectedQuizIds, quiz.id] : prev.selectedQuizIds
+    }));
+    setNewQuiz({ question: '', options: ['', '', '', ''], answer: 0 });
+    playSfx(SFX.SUCCESS);
+  };
+
   const renderLobby = () => (
     <div className="flex flex-col items-center justify-center min-h-screen p-6 animate-in fade-in duration-1000 relative overflow-hidden bg-slate-950">
-      {/* 백그라운드 그리드망 비주얼 */}
       <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#34d399 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
       
       <div className="relative z-10 text-center space-y-12 w-full max-w-7xl">
         <div className="space-y-4">
           <h1 className="text-9xl font-black tracking-tighter italic text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]">CLIMATE <span className="text-emerald-400">WAR</span></h1>
-          <div className="flex items-center justify-center gap-4">
-             <div className="h-1 w-24 bg-emerald-500"></div>
-             <p className="text-2xl text-emerald-400 font-black uppercase tracking-[0.6em]">Earth Occupation Campaign</p>
-             <div className="h-1 w-24 bg-emerald-500"></div>
-          </div>
+          <p className="text-2xl text-emerald-400 font-black uppercase tracking-[0.6em]">Earth Occupation Campaign</p>
         </div>
 
         <div className="w-full mx-auto space-y-8 pt-6">
           {!role ? (
-            <div className="max-w-md mx-auto space-y-6 glass p-10 rounded-[3rem] border border-white/10 shadow-2xl">
+            <div className="max-w-md mx-auto space-y-6 glass p-10 rounded-[3rem] border border-white/10 shadow-2xl bg-black/40">
               <div className="space-y-4">
                 <label className="text-xs font-black text-emerald-400 uppercase tracking-widest block text-left ml-4">Command Room Code</label>
                 <input type="text" placeholder="방 코드(예:ROOM1)" value={roomInput} onChange={(e) => setRoomInput(e.target.value.toUpperCase())} className="w-full p-6 bg-black/40 border-2 border-emerald-500/30 rounded-3xl text-center text-4xl font-black outline-none focus:border-emerald-500 transition-all text-white placeholder:text-white/20" />
@@ -250,24 +287,28 @@ const App: React.FC = () => {
                 <input type="text" placeholder="사령관 닉네임" value={nicknameInput} onChange={(e) => setNicknameInput(e.target.value)} className="w-full p-5 bg-black/40 border border-white/10 rounded-2xl text-center text-2xl font-bold outline-none text-white placeholder:text-white/20" />
               </div>
               <div className="grid grid-cols-2 gap-6 pt-4">
-                <button disabled={isConnecting} onClick={() => handleEnterRoom('HOST')} className="p-8 bg-emerald-600 hover:bg-emerald-500 rounded-[2rem] font-black text-2xl shadow-xl transition-all active:scale-95 border-b-8 border-emerald-800">교사 제어</button>
-                <button disabled={isConnecting} onClick={() => handleEnterRoom('GUEST')} className="p-8 bg-blue-600 hover:bg-blue-500 rounded-[2rem] font-black text-2xl shadow-xl transition-all active:scale-95 border-b-8 border-blue-800">학생 참전</button>
+                <button disabled={isConnecting} onClick={() => handleEnterRoom('HOST')} className="p-8 bg-emerald-600 hover:bg-emerald-500 rounded-[2rem] font-black text-2xl shadow-xl transition-all active:scale-95 border-b-8 border-emerald-800">지휘관(교사)</button>
+                <button disabled={isConnecting} onClick={() => handleEnterRoom('GUEST')} className="p-8 bg-blue-600 hover:bg-blue-500 rounded-[2rem] font-black text-2xl shadow-xl transition-all active:scale-95 border-b-8 border-blue-800">참전용사(학생)</button>
               </div>
             </div>
           ) : role === 'HOST' ? (
-            <div className="glass p-12 rounded-[4rem] border-2 border-emerald-500/30 shadow-[0_0_100px_rgba(52,211,153,0.1)] text-left bg-black/60 backdrop-blur-3xl animate-in slide-in-from-bottom-10">
+            <div className="glass p-12 rounded-[4rem] border-2 border-emerald-500/30 shadow-[0_0_100px_rgba(52,211,153,0.1)] text-left bg-black/80 backdrop-blur-3xl animate-in slide-in-from-bottom-10">
               <div className="flex justify-between items-center mb-12 border-b border-white/10 pb-8">
                 <div>
-                  <h2 className="text-5xl font-black text-white tracking-tighter uppercase italic"><i className="fa-solid fa-satellite-dish mr-4 text-emerald-400 animate-pulse"></i> WAR ROOM: {gameState.roomId}</h2>
-                  <p className="text-emerald-400/60 font-bold mt-2 tracking-widest">현재 아홉 국가의 참전을 대기하고 있습니다.</p>
+                  <h2 className="text-5xl font-black text-white tracking-tighter uppercase italic flex items-center gap-4">
+                    <i className="fa-solid fa-satellite-dish text-emerald-400 animate-pulse"></i>
+                    BATTLE ROOM: {gameState.roomId}
+                  </h2>
+                  <p className="text-emerald-400/60 font-bold mt-2 tracking-widest uppercase">각 국가의 사령관이 집결하기를 기다리고 있습니다.</p>
                 </div>
-                <div className="bg-emerald-500/20 text-emerald-400 px-10 py-4 rounded-full font-black text-2xl border border-emerald-500/30">참전 국가: {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).length} / 9</div>
+                <div className="bg-emerald-500/20 text-emerald-400 px-10 py-4 rounded-full font-black text-2xl border border-emerald-500/30">
+                  집결 현황: {(Object.values(gameState.countries) as Country[]).filter(c=>c.isJoined).length} / 9
+                </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
                 {(Object.values(gameState.countries) as Country[]).map(c => (
-                  <div key={c.id} className={`group relative p-10 rounded-[3rem] border-4 transition-all duration-500 flex items-center gap-10 min-h-[180px] overflow-hidden ${c.isJoined ? 'bg-emerald-500/20 border-emerald-400 scale-105 shadow-[0_0_40px_rgba(52,211,153,0.3)]' : 'bg-white/5 border-white/5 opacity-40'}`}>
-                    {/* 선택 완료 시 도장 뱃지 */}
+                  <div key={c.id} className={`group relative p-10 rounded-[3rem] border-4 transition-all duration-500 flex items-center gap-10 min-h-[180px] overflow-hidden ${c.isJoined ? 'bg-emerald-500/20 border-emerald-500 scale-105 shadow-[0_0_40px_rgba(52,211,153,0.3)]' : 'bg-white/5 border-white/5 opacity-40'}`}>
                     {c.isJoined && (
                       <div className="absolute -top-4 -right-4 bg-red-600 text-white font-black px-8 py-3 rounded-full text-xl shadow-2xl rotate-12 border-4 border-white animate-in zoom-in">
                         선택 완료
@@ -277,22 +318,20 @@ const App: React.FC = () => {
                     <div className="text-left overflow-hidden flex-1">
                       <div className="text-sm opacity-50 font-black uppercase tracking-[0.3em] mb-2">{c.name}</div>
                       <div className="text-4xl font-black truncate text-white leading-tight">
-                        {c.nickname || <span className="text-white/10 italic text-2xl tracking-tighter">참전 대기 중...</span>}
+                        {c.nickname || <span className="text-white/10 italic text-2xl">사령관 대기 중...</span>}
                       </div>
                     </div>
-                    {/* 삼국지 스타일 장식선 */}
-                    <div className="absolute bottom-0 left-0 h-1 bg-emerald-400 transition-all duration-1000" style={{ width: c.isJoined ? '100%' : '0%' }}></div>
                   </div>
                 ))}
               </div>
-              <button onClick={nextPhase} className="w-full p-10 bg-emerald-500 hover:bg-emerald-400 rounded-[3rem] font-black text-4xl shadow-[0_20px_80px_rgba(16,185,129,0.3)] transition-all transform hover:scale-[1.01] active:scale-95 border-b-[12px] border-emerald-700">전 지구적 캠페인 시작 (BATTLE START) ▶</button>
+              <button onClick={nextPhase} className="w-full p-10 bg-emerald-500 hover:bg-emerald-400 rounded-[3rem] font-black text-4xl shadow-[0_20px_80px_rgba(16,185,129,0.3)] transition-all transform hover:scale-[1.01] active:scale-95 border-b-[12px] border-emerald-700">전략 수립 단계로 이동 (BATTLE SETUP) ▶</button>
             </div>
           ) : !myCountryId ? (
             <div className="space-y-10 animate-in slide-in-from-bottom-10 text-left w-full max-w-5xl mx-auto">
-              <div className="glass p-12 rounded-[4rem] border-2 border-blue-500/30 shadow-2xl bg-black/40">
+              <div className="glass p-12 rounded-[4rem] border-2 border-blue-500/30 shadow-2xl bg-black/60">
                 <h2 className="text-4xl font-black mb-10 text-left italic tracking-tighter flex items-center gap-5 text-blue-400">
                   <i className="fa-solid fa-crosshairs animate-ping text-sm"></i>
-                  점령할 국가 영지 선택
+                  국가 선택 및 전선 배치
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                   {(Object.values(gameState.countries) as Country[]).map(c => {
@@ -304,7 +343,7 @@ const App: React.FC = () => {
                         onClick={() => { playSfx(SFX.CLICK); setPendingCountryId(c.id); }}
                         className={`p-8 rounded-[2.5rem] border-4 transition-all flex flex-col items-center gap-4 text-center group min-h-[200px] justify-center relative overflow-hidden ${pendingCountryId === c.id ? 'bg-blue-600 border-blue-400 scale-105 shadow-[0_0_50px_rgba(37,99,235,0.4)] z-10' : isTaken ? 'opacity-20 grayscale border-transparent cursor-not-allowed' : 'bg-white/5 border-white/10 hover:border-blue-400/50 hover:bg-blue-900/20'}`}
                       >
-                        {isTaken && <div className="absolute inset-0 flex items-center justify-center bg-black/60 font-black text-red-500 text-2xl rotate-[-20deg] border-2 border-red-500">OCCUPIED</div>}
+                        {isTaken && <div className="absolute inset-0 flex items-center justify-center bg-black/80 font-black text-red-500 text-2xl rotate-[-20deg] border-2 border-red-500">OCCUPIED</div>}
                         <span className="text-8xl group-hover:scale-110 transition-transform duration-500">{c.flag}</span>
                         <div className="text-xl font-black tracking-widest text-white uppercase">{c.name}</div>
                       </button>
@@ -314,18 +353,18 @@ const App: React.FC = () => {
               </div>
               
               {pendingCountryId && (
-                <div className="glass p-12 rounded-[4rem] border-4 border-blue-500/50 bg-blue-950/40 text-center space-y-8 animate-in zoom-in shadow-[0_0_100px_rgba(37,99,235,0.2)]">
+                <div className="glass p-12 rounded-[4rem] border-4 border-blue-500/50 bg-blue-950/60 text-center space-y-8 animate-in zoom-in shadow-[0_0_100px_rgba(37,99,235,0.2)]">
                   <div className="flex items-center justify-center gap-8">
                     <span className="text-[120px] drop-shadow-[0_0_30px_rgba(255,255,255,0.4)]">{gameState.countries[pendingCountryId].flag}</span>
                     <div className="text-left">
                        <h3 className="text-7xl font-black tracking-tighter italic uppercase text-white leading-none">{gameState.countries[pendingCountryId].name}</h3>
-                       <p className="text-blue-400 font-bold mt-2 tracking-widest uppercase">National Representative</p>
+                       <p className="text-blue-400 font-bold mt-2 tracking-widest uppercase">National Territory</p>
                     </div>
                   </div>
-                  <div className="bg-black/60 p-10 rounded-[3rem] text-left border border-white/10 shadow-inner">
+                  <div className="bg-black/80 p-10 rounded-[3rem] text-left border border-white/10 shadow-inner">
                     <div className="text-emerald-400 font-black text-2xl mb-4 flex items-center gap-4">
                       <i className="fa-solid fa-shield-halved text-blue-400"></i> 
-                      고유 능력: {gameState.countries[pendingCountryId].abilityName}
+                      고유 전술: {gameState.countries[pendingCountryId].abilityName}
                     </div>
                     <p className="text-2xl text-slate-300 font-medium leading-relaxed">{gameState.countries[pendingCountryId].abilityDesc}</p>
                   </div>
@@ -338,7 +377,7 @@ const App: React.FC = () => {
                     }} 
                     className={`w-full p-10 rounded-[3rem] font-black text-5xl shadow-2xl transition-all transform active:scale-95 border-b-[12px] ${isJoining ? 'bg-slate-700 border-slate-900 cursor-wait' : 'bg-blue-600 hover:bg-blue-500 border-blue-800'}`}
                   >
-                    {isJoining ? "사령부 승인 대기 중..." : "활동 시작 (DEPLOY) ▶"}
+                    {isJoining ? "사령부 승인 대기 중..." : "전선 배치 (DEPLOY) ▶"}
                   </button>
                 </div>
               )}
@@ -347,9 +386,9 @@ const App: React.FC = () => {
             <div className="glass p-20 rounded-[5rem] border-2 border-emerald-500/30 text-center animate-in zoom-in shadow-[0_0_80px_rgba(52,211,153,0.1)] max-w-2xl mx-auto bg-black/60">
                <div className="relative inline-block mb-10">
                   <span className="text-[180px] block drop-shadow-2xl animate-pulse">{gameState.countries[myCountryId].flag}</span>
-                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-black font-black px-6 py-2 rounded-xl text-xl uppercase tracking-tighter">Approved</div>
+                  <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-black font-black px-6 py-2 rounded-xl text-xl uppercase tracking-tighter shadow-xl">APPROVED</div>
                </div>
-               <h2 className="text-7xl font-black mb-6 tracking-tighter italic text-emerald-400 uppercase leading-none">{gameState.countries[myCountryId].name} <br/>대표 입장 완료</h2>
+               <h2 className="text-7xl font-black mb-6 tracking-tighter italic text-emerald-400 uppercase leading-none">{gameState.countries[myCountryId].name} <br/>배치 완료</h2>
                <p className="text-2xl text-slate-400 font-bold mb-16 tracking-tight">지구 사령부(교사)에서 캠페인을 개시할 때까지 <br/>전략을 구상하며 대기하십시오.</p>
                <div className="flex justify-center gap-3">
                   <div className="w-4 h-4 bg-emerald-500 rounded-full animate-bounce"></div>
@@ -367,28 +406,25 @@ const App: React.FC = () => {
     <div className={`min-h-screen transition-bg bg-gradient-to-br ${currentTheme.color} ${gameState.temperature >= 19 ? 'animate-crisis' : ''}`}>
       {gameState.phase === 'LOBBY' ? renderLobby() : (
         <div className="animate-in fade-in duration-1000">
-          {/* 단계별 와이드 비주얼 헤더 */}
-          <div className="relative h-[400px] w-full overflow-hidden shadow-2xl border-b border-white/10">
+          <div className="relative h-[350px] w-full overflow-hidden shadow-2xl border-b border-white/10">
             <img src={currentTheme.img} className="absolute inset-0 w-full h-full object-cover transform scale-105 opacity-60" />
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
             
-            <div className="absolute bottom-0 left-0 w-full p-12 md:p-16 flex flex-col md:flex-row justify-between items-end gap-10">
+            <div className="absolute bottom-0 left-0 w-full p-12 flex flex-col md:flex-row justify-between items-end gap-10">
               <div className="flex items-center gap-10">
-                <div className="w-28 h-28 glass rounded-[2rem] border-2 border-white/20 flex items-center justify-center text-6xl text-white shadow-2xl animate-pulse">
-                  {gameState.phase === 'DEVELOPMENT' && <i className="fa-solid fa-industry"></i>}
-                  {gameState.phase === 'QUIZ' && <i className="fa-solid fa-bolt-lightning"></i>}
-                  {gameState.phase === 'DISCUSSION' && <i className="fa-solid fa-comments"></i>}
-                  {gameState.phase === 'SETUP' && <i className="fa-solid fa-database"></i>}
+                <div className="w-24 h-24 glass rounded-[2rem] border-2 border-white/20 flex items-center justify-center text-5xl text-white shadow-2xl animate-pulse">
+                   {gameState.phase === 'SETUP' && <i className="fa-solid fa-list-check"></i>}
+                   {gameState.phase === 'DEVELOPMENT' && <i className="fa-solid fa-industry"></i>}
+                   {gameState.phase === 'QUIZ' && <i className="fa-solid fa-bolt-lightning"></i>}
                 </div>
                 <div>
-                  <h1 className="text-8xl font-black italic uppercase tracking-tighter text-white drop-shadow-2xl leading-none">{gameState.phase}</h1>
-                  <p className="text-3xl font-bold text-emerald-400 tracking-[0.3em] uppercase mt-4 drop-shadow-md">{currentTheme.label} • ROUND {gameState.turn}</p>
+                  <h1 className="text-7xl font-black italic uppercase tracking-tighter text-white drop-shadow-2xl leading-none">{gameState.phase}</h1>
+                  <p className="text-2xl font-bold text-emerald-400 tracking-[0.3em] uppercase mt-3 drop-shadow-md">{currentTheme.label} • ROUND {gameState.turn}</p>
                 </div>
               </div>
-              
               <div className="text-right">
-                <div className="text-8xl font-black tabular-nums text-white drop-shadow-2xl bg-black/60 backdrop-blur-3xl px-14 py-5 rounded-[2.5rem] border-2 border-white/10 shadow-inner">
-                  {gameState.timer}<span className="text-3xl ml-2 opacity-50 font-black">SEC</span>
+                <div className="text-7xl font-black tabular-nums text-white bg-black/60 backdrop-blur-3xl px-12 py-4 rounded-[2rem] border-2 border-white/10 shadow-inner">
+                  {gameState.timer}<span className="text-2xl ml-2 opacity-50">S</span>
                 </div>
               </div>
             </div>
@@ -401,19 +437,19 @@ const App: React.FC = () => {
                 
                 {role === 'HOST' && (
                   <div className="glass p-8 rounded-[3rem] border-2 border-emerald-500/30 flex flex-col gap-6 bg-emerald-500/5 shadow-2xl">
-                    <h4 className="text-sm font-black text-center uppercase opacity-60 tracking-widest flex items-center justify-center gap-3">
+                    <h4 className="text-xs font-black text-center uppercase opacity-60 tracking-widest flex items-center justify-center gap-3">
                       <i className="fa-solid fa-temperature-half text-emerald-400"></i>
-                      지구 환경 통제실
+                      기후 전술 제어기
                     </h4>
                     <div className="grid grid-cols-2 gap-4">
-                      <button onClick={() => { adjustTemp(-0.2); }} className="group p-6 bg-blue-600/80 hover:bg-blue-500 rounded-3xl font-black text-2xl shadow-xl transition-all border-b-4 border-blue-900">- 0.2℃</button>
-                      <button onClick={() => { adjustTemp(0.2); }} className="group p-6 bg-red-600/80 hover:bg-red-500 rounded-3xl font-black text-2xl shadow-xl transition-all border-b-4 border-red-900">+ 0.2℃</button>
+                      <button onClick={() => adjustTemp(-0.2)} className="p-6 bg-blue-600/80 hover:bg-blue-500 rounded-3xl font-black text-2xl shadow-xl transition-all border-b-4 border-blue-900">- 0.2℃</button>
+                      <button onClick={() => adjustTemp(0.2)} className="p-6 bg-red-600/80 hover:bg-red-500 rounded-3xl font-black text-2xl shadow-xl transition-all border-b-4 border-red-900">+ 0.2℃</button>
                     </div>
                   </div>
                 )}
                 
-                <div className="glass p-8 rounded-[3rem] h-[600px] flex flex-col border border-white/10 shadow-2xl bg-black/30">
-                   <h3 className="text-xs font-black uppercase opacity-40 mb-6 tracking-widest flex items-center gap-3"><i className="fa-solid fa-tower-broadcast"></i> 사령부 실시간 통신</h3>
+                <div className="glass p-8 rounded-[3rem] h-[550px] flex flex-col border border-white/10 shadow-2xl bg-black/40">
+                   <h3 className="text-xs font-black uppercase opacity-40 mb-6 tracking-widest flex items-center gap-3"><i className="fa-solid fa-tower-broadcast"></i> 전술 상황 브리핑</h3>
                    <div className="overflow-y-auto flex-1 space-y-3 pr-3 custom-scrollbar">
                       {gameState.logs.map((log, i) => (
                         <div key={i} className="text-lg border-l-4 border-emerald-500/50 pl-5 py-3 font-semibold bg-white/5 rounded-r-2xl animate-in slide-in-from-left-4">
@@ -425,11 +461,59 @@ const App: React.FC = () => {
               </aside>
 
               <section className="lg:col-span-9">
-                {role === 'HOST' && (
+                {role === 'HOST' && gameState.phase === 'SETUP' && (
+                  <div className="glass p-12 rounded-[4rem] border border-white/10 shadow-2xl space-y-12 animate-in zoom-in bg-black/20">
+                    <div className="flex justify-between items-center border-b border-white/10 pb-8">
+                       <h2 className="text-5xl font-black italic tracking-tighter uppercase">전략 문제 리스트 구성</h2>
+                       <button onClick={nextPhase} className="px-20 py-8 bg-emerald-600 hover:bg-emerald-500 rounded-[3rem] font-black text-3xl shadow-xl border-b-8 border-emerald-800 transition-all">
+                         작전 시작 (ROUND START) ▶
+                       </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                       <div className="p-10 bg-black/60 rounded-[3rem] border border-white/10 space-y-8 h-[600px] flex flex-col overflow-hidden">
+                          <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-3xl font-black italic text-emerald-400">문제 은행 (QUIZ POOL)</h3>
+                            <span className="bg-white/10 px-6 py-2 rounded-full font-black text-xl">{gameState.selectedQuizIds.length} / {MAX_TURNS}</span>
+                          </div>
+                          <div className="overflow-y-auto flex-1 space-y-4 pr-3 custom-scrollbar">
+                             {[...gameState.customQuizzes, ...QUIZ_POOL].map(q => (
+                               <div 
+                                key={q.id} 
+                                onClick={() => toggleQuiz(q.id)}
+                                className={`p-6 rounded-2xl border-2 transition-all cursor-pointer flex justify-between items-center group ${gameState.selectedQuizIds.includes(q.id) ? 'bg-emerald-600/30 border-emerald-500 scale-[1.02]' : 'bg-white/5 border-transparent hover:bg-white/10'}`}
+                               >
+                                 <span className="font-bold text-lg leading-snug flex-1">{q.question}</span>
+                                 {gameState.selectedQuizIds.includes(q.id) && <i className="fa-solid fa-check-circle text-emerald-400 text-3xl"></i>}
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+
+                       <div className="p-10 bg-black/60 rounded-[3rem] border border-white/10 space-y-8">
+                          <h3 className="text-3xl font-black italic text-blue-400">특수 문제 직접 출제</h3>
+                          <div className="space-y-6">
+                            <input type="text" placeholder="질문 내용을 입력하세요" value={newQuiz.question} onChange={e => setNewQuiz({...newQuiz, question: e.target.value})} className="w-full p-6 bg-white/5 rounded-2xl border border-white/10 font-bold text-xl outline-none focus:border-blue-500" />
+                            <div className="grid grid-cols-2 gap-4">
+                               {newQuiz.options.map((opt, i) => (
+                                 <input key={i} type="text" placeholder={`선택지 ${i+1}`} value={opt} onChange={e => { const opts = [...newQuiz.options]; opts[i] = e.target.value; setNewQuiz({...newQuiz, options: opts}); }} className={`p-4 bg-white/5 rounded-xl border-2 transition-all ${newQuiz.answer === i ? 'border-blue-500 bg-blue-500/10' : 'border-white/10'}`} onClick={() => setNewQuiz({...newQuiz, answer: i})} />
+                               ))}
+                            </div>
+                            <button onClick={addCustomQuiz} className="w-full p-6 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black text-2xl shadow-xl border-b-4 border-blue-800 transition-all">작전 목록에 추가</button>
+                          </div>
+                          <div className="p-6 bg-slate-900/50 rounded-2xl border border-white/5 text-slate-400 text-sm italic">
+                             * 최소 {MAX_TURNS}개의 문제가 선택되어야 작전 시작이 가능합니다. 직접 만든 문제는 자동으로 목록에 추가됩니다.
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {role === 'HOST' && gameState.phase !== 'SETUP' && (
                   <div className="glass p-12 rounded-[4rem] border border-white/10 h-full min-h-[850px] flex flex-col shadow-2xl bg-black/20">
                     <div className="flex justify-between items-center mb-12 border-b border-white/10 pb-8">
                       <h2 className="text-6xl font-black italic tracking-tighter uppercase text-white/90">Global Command Center</h2>
-                      <button onClick={nextPhase} className="px-24 py-10 bg-indigo-600 hover:bg-indigo-500 rounded-[3rem] font-black text-4xl shadow-[0_20px_60px_rgba(79,70,229,0.3)] border-b-[10px] border-indigo-900 transition-all">다음 단계로 이동 ▶</button>
+                      <button onClick={nextPhase} className="px-24 py-10 bg-indigo-600 hover:bg-indigo-500 rounded-[3rem] font-black text-4xl shadow-[0_20px_60px_rgba(79,70,229,0.3)] border-b-[10px] border-indigo-900 transition-all active:scale-95">다음 작전으로 이동 ▶</button>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -447,8 +531,8 @@ const App: React.FC = () => {
                                <span className="text-xs font-black uppercase opacity-40 mb-1 block">국가 자산(GP)</span>
                                <div className="text-5xl font-black text-emerald-400 tabular-nums">{c.gp}</div>
                              </div>
-                             <span className={`px-8 py-3 rounded-2xl text-lg font-black uppercase ${c.lastChoice ? 'bg-blue-600 text-white animate-pulse' : 'bg-red-600/20 text-red-500'}`}>
-                               {c.lastChoice ? '선택 완료' : '대기 중'}
+                             <span className={`px-8 py-3 rounded-2xl text-lg font-black uppercase ${c.lastChoice ? 'bg-blue-600 text-white animate-pulse shadow-[0_0_20px_rgba(37,99,235,0.5)]' : 'bg-red-600/20 text-red-500'}`}>
+                               {c.lastChoice ? '전략 선택됨' : '전략 대기 중'}
                              </span>
                           </div>
                         </div>
@@ -477,7 +561,7 @@ const App: React.FC = () => {
                     <div className="glass p-20 rounded-[6rem] border-2 border-white/10 min-h-[600px] flex flex-col items-center justify-center shadow-2xl bg-black/20">
                       {gameState.phase === 'DEVELOPMENT' ? (
                         <div className="w-full text-center space-y-20 animate-in zoom-in">
-                          <h3 className="text-8xl font-black italic tracking-tighter uppercase text-white drop-shadow-2xl">전략 선택 (STRATEGY)</h3>
+                          <h3 className="text-8xl font-black italic tracking-tighter uppercase text-white drop-shadow-2xl">국가 발전 전략 (STRATEGY)</h3>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-10 max-w-7xl mx-auto">
                             {[
                                { id: 'ECONOMIC', label: '경제 중심', icon: 'fa-industry', color: 'orange', gp: '+10', desc: '고탄소 기반 성장을 강행하여 국부를 극대화합니다.' },
@@ -499,7 +583,7 @@ const App: React.FC = () => {
                       ) : (
                         <div className="text-center space-y-12">
                            <div className="w-40 h-40 border-[16px] border-white/5 border-t-emerald-400 rounded-full animate-spin mx-auto shadow-[0_0_60px_rgba(52,211,153,0.2)]"></div>
-                           <h3 className="text-6xl font-black italic tracking-tighter text-white/30 uppercase">전략 분석 및 사령부 명령 대기 중...</h3>
+                           <h3 className="text-6xl font-black italic tracking-tighter text-white/30 uppercase">사령부의 다음 작전 명령 대기 중...</h3>
                         </div>
                       )}
                     </div>
