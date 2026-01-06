@@ -17,6 +17,8 @@ export interface Country {
   isJoined: boolean;
   nickname: string;
   score: number;
+  isCorrect: boolean | null; // 퀴즈 정답 여부
+  lastActive: number; // 실시간 연결 확인용 타임스탬프
 }
 
 export interface QuizQuestion {
@@ -43,19 +45,12 @@ export interface GameState {
   rpsChoiceA: 'ROCK' | 'PAPER' | 'SCISSORS' | null;
   rpsChoiceB: 'ROCK' | 'PAPER' | 'SCISSORS' | null;
   lastTurnChoices: Record<CountryId, DevelopmentChoice>;
-  // Ability Active Flags
   activeEffects: {
-    swedenWaiting: boolean; // Sweden activated, waiting for turn end
+    swedenWaiting: boolean;
     japanActive: boolean;
     denmarkTurnsLeft: number;
     franceActive: boolean;
     brazilActive: boolean;
     tuvaluWaiting: boolean;
   };
-}
-
-export enum RPSResult {
-  A_WIN,
-  B_WIN,
-  DRAW
 }

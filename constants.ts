@@ -6,16 +6,16 @@ export const MAX_TEMPERATURE = 20.0;
 export const MAX_TURNS = 8;
 
 export const COUNTRIES: Record<CountryId, Country> = {
-  // Added nickname: '' to satisfy Country interface
-  KOREA: { id: 'KOREA', name: '대한민국', flag: '🇰🇷', abilityName: '녹색성장', abilityDesc: '두 나라 지명 후 가위바위보 대결. 진 쪽 GP -5, 기온 -0.3', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  USA: { id: 'USA', name: '미국', flag: '🇺🇸', abilityName: 'CCS 기술', abilityDesc: '퀴즈 정답 시 지구 기온 -0.5', gp: 25, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  SWEDEN: { id: 'SWEDEN', name: '스웨덴', flag: '🇸🇪', abilityName: '인간 환경 선언', abilityDesc: '다음 턴 모든 국가 환경 우선 선택 시 기온 -0.4', gp: 18, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  JAPAN: { id: 'JAPAN', name: '일본', flag: '🇯🇵', abilityName: '교토의정서', abilityDesc: '기온 17도 이상 시. 직전 경제 우선 국가는 이번 턴 환경 우선 강제', gp: 22, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  TUVALU: { id: 'TUVALU', name: '투발루', flag: '🇹🇻', abilityName: '가라앉는 섬', abilityDesc: '기온 18도 이상 시. 한 나라가 GP 10 기부 시 기온 -0.4', gp: 10, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  DENMARK: { id: 'DENMARK', name: '덴마크', flag: '🇩🇰', abilityName: '코펜하겐 기후협약', abilityDesc: '기온 17도 이상 시. GP 상위 3개국 2턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  FRANCE: { id: 'FRANCE', name: '프랑스', flag: '🇫🇷', abilityName: '파리기후변화협약', abilityDesc: '기온 19도 이상 시. 프랑스 제외 모든 국가 1턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  BRAZIL: { id: 'BRAZIL', name: '브라질', flag: '🇧🇷', abilityName: '리우 환경회의', abilityDesc: '브라질 제외 모든 국가 1턴간 경제/환경 선택 반대 적용', gp: 15, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
-  NKOREA: { id: 'NKOREA', name: '북한', flag: '🇰🇵', abilityName: '내래 핵 쏜다우', abilityDesc: '지구 기온 +1.0 (즉시 적용)', gp: 12, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0 },
+  // Fix: Added isCorrect: null and lastActive: 0 to each country entry to match Country interface
+  KOREA: { id: 'KOREA', name: '대한민국', flag: '🇰🇷', abilityName: '녹색성장', abilityDesc: '두 나라 지명 후 가위바위보 대결. 진 쪽 GP -5, 기온 -0.3', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  USA: { id: 'USA', name: '미국', flag: '🇺🇸', abilityName: 'CCS 기술', abilityDesc: '퀴즈 정답 시 지구 기온 -0.5', gp: 25, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  SWEDEN: { id: 'SWEDEN', name: '스웨덴', flag: '🇸🇪', abilityName: '인간 환경 선언', abilityDesc: '다음 턴 모든 국가 환경 우선 선택 시 기온 -0.4', gp: 18, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  JAPAN: { id: 'JAPAN', name: '일본', flag: '🇯🇵', abilityName: '교토의정서', abilityDesc: '기온 17도 이상 시. 직전 경제 우선 국가는 이번 턴 환경 우선 강제', gp: 22, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  TUVALU: { id: 'TUVALU', name: '투발루', flag: '🇹🇻', abilityName: '가라앉는 섬', abilityDesc: '기온 18도 이상 시. 한 나라가 GP 10 기부 시 기온 -0.4', gp: 10, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  DENMARK: { id: 'DENMARK', name: '덴마크', flag: '🇩🇰', abilityName: '코펜하겐 기후협약', abilityDesc: '기온 17도 이상 시. GP 상위 3개국 2턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  FRANCE: { id: 'FRANCE', name: '프랑스', flag: '🇫🇷', abilityName: '파리기후변화협약', abilityDesc: '기온 19도 이상 시. 프랑스 제외 모든 국가 1턴간 환경 우선 강제', gp: 20, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  BRAZIL: { id: 'BRAZIL', name: '브라질', flag: '🇧🇷', abilityName: '리우 환경회의', abilityDesc: '브라질 제외 모든 국가 1턴간 경제/환경 선택 반대 적용', gp: 15, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
+  NKOREA: { id: 'NKOREA', name: '북한', flag: '🇰🇵', abilityName: '내래 핵 쏜다우', abilityDesc: '지구 기온 +1.0 (즉시 적용)', gp: 12, lastChoice: null, isAbilityUsed: false, isJoined: false, nickname: '', score: 0, isCorrect: null, lastActive: 0 },
 };
 
 export const QUIZ_POOL: QuizQuestion[] = [
@@ -34,7 +34,7 @@ export const QUIZ_POOL: QuizQuestion[] = [
   { id: 13, question: "환경을 보호하기 위한 '3R'에 해당하지 않는 것은?", options: ["Reduce(절약)", "Reuse(재사용)", "Recycle(재활용)", "Repair(수리)"], answer: 3, explanation: "전통적인 3R은 Reduce, Reuse, Recycle입니다." },
   { id: 14, question: "물 발자국(Water Footprint)이란 무엇인가요?", options: ["물 위를 걸을 때 생기는 자국", "제품 생산 전 과정에서 소비되는 물의 양", "비가 올 때 생기는 웅덩이", "수영장에 들어간 횟수"], answer: 1, explanation: "우리가 사용하는 제품을 만들기 위해 소비되는 물의 총량을 의미합니다." },
   { id: 15, question: "나무 한 그루가 1년 동안 흡수하는 이산화탄소의 양은 대략 얼마일까요?", options: ["1kg", "8kg", "100kg", "500kg"], answer: 1, explanation: "일반적으로 성숙한 나무 한 그루는 연간 약 8~10kg의 CO2를 흡수합니다." },
-  { id: 16, question: "사막화 현상의 원인이 아닌 것은?", options: ["과도한 방목", "무분별한 삼림 벌채", "기후 변화", "적절한 관개 농법"], answer: 3, explanation: "적절한 관개 농법은 사막화를 방지하는 데 도움을 줍니다." },
+  { id: 16, question: "사막화 현상의 원인이 아닌 것은?", options: ["過度한 방목", "무분별한 삼림 벌채", "기후 변화", "적절한 관개 농법"], answer: 3, explanation: "적절한 관개 농법은 사막화를 방지하는 데 도움을 줍니다." },
   { id: 17, question: "에너지 효율 등급이 1등급에 가까울수록 에너지를 어떻게 소비하나요?", options: ["많이 소비한다", "적게 소비한다", "중간 정도로 소비한다", "상관없다"], answer: 1, explanation: "1등급 제품은 5등급 제품보다 에너지를 훨씬 적게 소비합니다." },
   { id: 18, question: "대기 오염의 지표로 사용되는 생물은 무엇일까요?", options: ["지의류", "민들레", "무당벌레", "참새"], answer: 0, explanation: "지의류는 대기 오염에 매우 민감하여 환경 지표 생물로 쓰입니다." },
   { id: 19, question: "바이오 에너지의 원료가 될 수 없는 것은?", options: ["사탕수수", "옥수수", "폐식용유", "스티로폼"], answer: 3, explanation: "스티로폼은 석유 화학 제품으로 바이오 에너지 원료가 아닙니다." },
